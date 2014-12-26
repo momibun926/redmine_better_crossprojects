@@ -134,9 +134,11 @@ class ProjectQuery < Query
   def sql_for_organizations_field(field, operator, value)
 
     organization_table = Organization.table_name
-    membership_table = OrganizationMembership.table_name
+    membership_table = Member.table_name
 
-    "#{Project.table_name}.id #{ operator == '=' ? 'IN' : 'NOT IN' } (SELECT project_id FROM #{membership_table} WHERE organization_id IN
+    "#{Project.table_name}.id #{ operator == '=' ? 'IN' : 'NOT IN' } (SELECT project_id FROM #{membership_table}
+                                                                        INNER JOIN users ON users.id = #{membership_table}.user_id AND users.type IN ('User', 'AnonymousUser')
+                                                                        WHERE organization_id IN
                                                                         (WITH RECURSIVE rec_tree(parent_id, id, name, direction, depth) AS (
                                                                         SELECT t.parent_id, t.id, t.name, t.direction, 1
                                                                         FROM #{organization_table} t
@@ -151,10 +153,11 @@ class ProjectQuery < Query
 
   def sql_for_organization_field(field, operator, value)
 
-    membership_table = OrganizationMembership.table_name
+    membership_table = Member.table_name
 
-    "#{Project.table_name}.id #{ operator == '=' ? 'IN' : 'NOT IN' } (SELECT project_id FROM #{membership_table}
-                                                                          WHERE #{sql_for_field(field, '=', value, membership_table, 'organization_id')}
+    "#{Project.table_name}.id #{ operator == '=' ? 'IN' : 'NOT IN' } (SELECT DISTINCT project_id FROM #{membership_table}
+                                                                          INNER JOIN users ON users.id = #{membership_table}.user_id AND users.type IN ('User', 'AnonymousUser')
+                                                                          WHERE #{sql_for_field(field, '=', value, User.table_name, 'organization_id')}
                                                                         )"
   end
 
@@ -249,7 +252,7 @@ end
 
 class QueryCustomFieldColumn < QueryColumn
   def value(object)
-    if object.is_a?(Project) || custom_field.visible_by?(object.project, User.current)
+    if object.kind_of?(Project) || custom_field.visible_by?(object.project, User.current)
       cv = object.custom_values.select {|v| v.custom_field_id == @cf.id}.collect {|v| @cf.cast_value(v.value)}
       cv.size > 1 ? cv.sort {|a,b| a.to_s <=> b.to_s} : cv.first
     else
